@@ -1,0 +1,16 @@
+{
+  "name": "archpilot-server",
+  "version": "1.0.0",
+  "description": "ArchPilot Architecture Computation Engine & API",
+  "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js",
+    "test": "node test/engine.test.js && node test/topology_rules.test.js && node test/comprehensive.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}
