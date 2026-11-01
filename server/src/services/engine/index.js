@@ -7,6 +7,54 @@ import { runStructuralRules } from "./rules/structural.js";
 import { calculateScores } from "./scoring.js";
 
 /**
+ * Fundamental topological anti-patterns that represent an incomplete or broken design.
+ * If any of these are present on a non-empty canvas, AI design generation must be blocked.
+ */
+export const BLOCKING_TOPOLOGY_RULES = new Set([
+  "TOPO_ORPHAN_NODE",
+  "TOPO_DISCONNECTED_SUBGRAPH",
+  "TOPO_NO_ENTRY_POINT",
+  "TOPO_UNREACHABLE_FROM_ENTRY",
+]);
+
+/**
+ * Evaluates whether an architecture is structurally complete and ready for AI synthesis.
+ *
+ * @param {Array} nodes Graph nodes
+ * @param {Array} findings Evaluated rule findings
+ * @returns {Object} Gatekeeper evaluation status
+ */
+export function evaluateGatekeeper(nodes = [], findings = []) {
+  const isBlankSlate = !nodes || nodes.length === 0;
+
+  const blockingFlaws = findings.filter((f) =>
+    BLOCKING_TOPOLOGY_RULES.has(f.ruleId)
+  );
+
+  const isDesignComplete = isBlankSlate || blockingFlaws.length === 0;
+
+  let mode = "COMPLETE_DESIGN";
+  let reason = null;
+
+  if (isBlankSlate) {
+    mode = "BLANK_SLATE";
+    reason = "Canvas is empty. Ready for from-scratch architecture synthesis.";
+  } else if (!isDesignComplete) {
+    mode = "INCOMPLETE_DESIGN";
+    const flawTitles = Array.from(new Set(blockingFlaws.map((f) => f.title))).join(", ");
+    reason = `Architecture design has ${blockingFlaws.length} basic structural flaw(s) (${flawTitles}). Connect or remove isolated components before requesting AI variant generation.`;
+  }
+
+  return {
+    canGenerateVariants: isDesignComplete,
+    mode,
+    blockingCount: blockingFlaws.length,
+    blockingFlaws,
+    reason,
+  };
+}
+
+/**
  * Runs deterministic analysis on the input nodes and edges using the
  * consolidated Two-Phase Pipeline:
  * Phase 1: buildGraphProfile compiles all topological facts in 3-4 structured passes.
@@ -39,6 +87,8 @@ export function analyzeArchitecture(
     nodeCount: nodes.length,
   });
 
+  const gatekeeper = evaluateGatekeeper(nodes, findings);
+
   return {
     timestamp: new Date().toISOString(),
     nodesCount: nodes.length,
@@ -51,6 +101,7 @@ export function analyzeArchitecture(
     connectedComponentsCount: profile.connectedComponents.length,
     findings,
     scoring,
+    gatekeeper,
     summary: generateSummary(findings, profile),
   };
 }

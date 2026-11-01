@@ -20,6 +20,7 @@ import {
   useEdgesState,
   type Connection,
   type Node,
+  MarkerType,
 } from "@xyflow/react";
 import {
   Activity,
@@ -75,6 +76,14 @@ type Finding = {
   remediation: string;
 };
 
+type GatekeeperStatus = {
+  canGenerateVariants: boolean;
+  mode: "BLANK_SLATE" | "COMPLETE_DESIGN" | "INCOMPLETE_DESIGN";
+  blockingCount: number;
+  blockingFlaws: Finding[];
+  reason: string | null;
+};
+
 type AnalysisResult = {
   timestamp: string;
   nodesCount: number;
@@ -100,6 +109,7 @@ type AnalysisResult = {
     note: string;
     skippedRules: { code: string; name: string; reason: string }[];
   };
+  gatekeeper?: GatekeeperStatus;
   summary: string;
 };
 
@@ -229,30 +239,35 @@ const initialEdges = [
     source: "client-1",
     target: "api-1",
     animated: true,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   },
   {
     id: "api-lb",
     source: "api-1",
     target: "lb-1",
     animated: true,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   },
   {
     id: "lb-server",
     source: "lb-1",
     target: "server-1",
     animated: true,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   },
   {
     id: "server-cache",
     source: "server-1",
     target: "cache-1",
     animated: true,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   },
   {
     id: "server-db",
     source: "server-1",
     target: "db-1",
     animated: true,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   },
 ];
 
@@ -342,11 +357,23 @@ function Workspace() {
     useState<AnalysisResult | null>(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [contextInputError, setContextInputError] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(7);
 
   const handleAnalyze = async () => {
+    // 1. Mandatory User Context Enforcement
+    if (!projectDescription.trim() && !projectConcerns.trim()) {
+      setShowInspector(true);
+      setInspectorTab("intent");
+      setContextInputError(
+        "Please provide context: describe the system you are creating or the problem you are solving before analyzing."
+      );
+      return;
+    }
+
+    setContextInputError(null);
     setIsAnalyzing(true);
     setAnalysisError(null);
 
@@ -395,6 +422,11 @@ function Workspace() {
           {
             ...connection,
             animated: true,
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 16,
+              height: 16,
+            },
           },
           currentEdges,
         ),
@@ -749,6 +781,11 @@ function Workspace() {
               defaultEdgeOptions={{
                 type: "smoothstep",
                 animated: true,
+                markerEnd: {
+                  type: MarkerType.ArrowClosed,
+                  width: 16,
+                  height: 16,
+                },
               }}
             >
               <Background
@@ -887,6 +924,16 @@ function Workspace() {
               );
             })() : (
               <div className="flex flex-col gap-4">
+                {contextInputError && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 shadow-xs">
+                    <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-600" />
+                    <div>
+                      <strong className="font-semibold">Context Required: </strong>
+                      {contextInputError}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label
                     htmlFor="project-desc"
@@ -901,11 +948,16 @@ function Workspace() {
                   <textarea
                     id="project-desc"
                     rows={3}
-                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-2.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    className={`mt-1.5 w-full rounded-lg border ${
+                      contextInputError
+                        ? "border-amber-400 ring-2 ring-amber-100"
+                        : "border-slate-200"
+                    } bg-white p-2.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100`}
                     placeholder="e.g. Distributed payment processing system for mobile and web users with high availability and fast checkout..."
                     value={projectDescription}
                     onChange={(e) => {
                       setProjectDescription(e.target.value);
+                      if (contextInputError) setContextInputError(null);
                       setSaved(false);
                     }}
                   />
@@ -930,6 +982,7 @@ function Workspace() {
                     value={projectConcerns}
                     onChange={(e) => {
                       setProjectConcerns(e.target.value);
+                      if (contextInputError) setContextInputError(null);
                       setSaved(false);
                     }}
                   />
@@ -996,6 +1049,36 @@ function Workspace() {
                     ? "No structural anti-patterns detected."
                     : `${analysisResult.findings.length} findings (${analysisResult.spofs.length} SPOF).`}
                 </p>
+
+                {analysisResult.gatekeeper && (
+                  <div
+                    className={`mt-2.5 rounded-lg border p-2.5 text-xs ${
+                      analysisResult.gatekeeper.canGenerateVariants
+                        ? "border-emerald-200 bg-emerald-50/70 text-emerald-900"
+                        : "border-rose-200 bg-rose-50/70 text-rose-900"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold">
+                      {analysisResult.gatekeeper.canGenerateVariants ? (
+                        <>
+                          <CheckCircle2 size={14} className="text-emerald-600" />
+                          <span>Structure Complete</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldAlert size={14} className="text-rose-600" />
+                          <span>Design Incomplete</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed">
+                      {analysisResult.gatekeeper.canGenerateVariants
+                        ? "Graph connectivity is valid for AI variant generation."
+                        : analysisResult.gatekeeper.reason}
+                    </p>
+                  </div>
+                )}
+
                 <button
                   onClick={() => setShowAnalysisModal(true)}
                   className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
@@ -1052,6 +1135,79 @@ function Workspace() {
 
             {/* Modal Body */}
             <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
+              {/* Architecture Completeness Gatekeeper Banner */}
+              {analysisResult.gatekeeper && (
+                analysisResult.gatekeeper.canGenerateVariants ? (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-emerald-900 shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs">
+                        <CheckCircle2 size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-emerald-900">
+                            Structural Completeness Verified
+                          </h4>
+                          <span className="rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
+                            Gatekeeper Passed
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-emerald-700">
+                          {analysisResult.gatekeeper.mode === "BLANK_SLATE"
+                            ? "Blank canvas — ready to synthesize starting architecture from user goals."
+                            : "Architecture connectivity is sound from entry to persistence. Eligible for AI variant generation."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-rose-300 bg-rose-50/90 p-4 text-rose-950 shadow-xs">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white shadow-xs">
+                          <ShieldAlert size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-bold text-rose-900">
+                              Basic Structural Flaws Detected — AI Generation Blocked
+                            </h4>
+                            <span className="rounded bg-rose-200 px-1.5 py-0.5 text-[10px] font-bold text-rose-800 uppercase tracking-wider">
+                              Locked
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-rose-700 leading-relaxed">
+                            {analysisResult.gatekeeper.reason}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {analysisResult.gatekeeper.blockingFlaws.length > 0 && (
+                      <div className="mt-3 border-t border-rose-200/80 pt-2.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-800">
+                          Blocking Flaws That Must Be Resolved ({analysisResult.gatekeeper.blockingFlaws.length}):
+                        </span>
+                        <div className="mt-1.5 space-y-1.5">
+                          {analysisResult.gatekeeper.blockingFlaws.map((flaw, idx) => (
+                            <div key={idx} className="flex items-start gap-2 text-xs text-rose-900">
+                              <span className="font-mono text-rose-600">•</span>
+                              <div>
+                                <strong className="font-semibold text-rose-900">{flaw.title}: </strong>
+                                <span className="text-rose-800">{flaw.description}</span>
+                                <p className="mt-0.5 text-[11px] font-medium text-rose-600">
+                                  Action: {flaw.remediation}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              )}
+
               {/* Score Ribbon */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                 <div className="flex flex-col items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50/70 p-3.5 text-center">
