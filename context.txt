@@ -1,0 +1,277 @@
+================================================================================
+ARCHPILOT — PROJECT CONTEXT & ARCHITECTURE SPECIFICATION
+================================================================================
+Generated for: ArchPilot (minorproject_MCA/archpilot)
+Target Audience: AI Assistant / Developer onboarding to this repository
+
+--------------------------------------------------------------------------------
+1. PROJECT OVERVIEW
+--------------------------------------------------------------------------------
+ArchPilot is an AI-assisted System Architecture Visualizer & Evaluation Engine.
+It enables engineers and architects to design high-level distributed systems
+using an interactive visual drag-and-drop canvas, and will evaluate architectures
+for Single Points of Failure (SPOFs), bottlenecks, capacity sizing, scalability
+risks, and anti-patterns.
+
+Core Philosophy ("Not a Thin LLM Wrapper"):
+- Code computes the deterministic facts:
+  * Graph topology (cycles, articulation points / SPOFs, fan-in/fan-out bottlenecks).
+  * Capacity sizing heuristics (RPS, storage estimates, compute node counts).
+  * Rule-based anti-pattern checks (e.g., Client directly connecting to Database,
+    un-cached heavy read databases, synchronous queues).
+  * Quantitative architectural scores (Scalability, Reliability, Cost, Security).
+- The LLM (Google Gemini) receives computed engine facts and RAG context to:
+  * Narrate explanations and actionable remediation steps.
+  * Suggest trade-offs and generate architecture variants (Cost-Optimized,
+    High-Availability, Low-Latency, Simplified).
+
+--------------------------------------------------------------------------------
+2. CURRENT REPOSITORY STRUCTURE & TECH STACK
+--------------------------------------------------------------------------------
+Root directory: /Users/mac/Desktop/minorproject_MCA/archpilot
+
+Directory layout:
+├── frontend/                     # Next.js App Router Frontend Application
+│   ├── public/                   # Static assets (SVGs, icons)
+│   ├── src/
+│   │   └── app/
+│   │       ├── favicon.ico
+│   │       ├── globals.css       # Tailwind CSS v4 configuration (@import "tailwindcss";)
+│   │       ├── layout.tsx        # Root HTML metadata & shell
+│   │       └── page.tsx          # Main ArchPilot interactive workspace canvas
+│   ├── eslint.config.mjs         # ESLint configuration
+│   ├── next.config.ts            # Next.js TypeScript config
+│   ├── package.json              # Frontend scripts and dependencies
+│   ├── tsconfig.json             # TypeScript 5 path and compiler options
+│   └── AGENTS.md                 # Agent guidelines for Next.js 16
+├── server/                       # Backend service directory
+│   └── app.js                    # Node.js backend entry point (scaffolding)
+└── context.txt                   # This project context document
+
+Frontend Tech Stack:
+- Framework: Next.js 16.4.3 (App Router)
+- Language: TypeScript 5 (.tsx, .ts)
+- React: React 19.3.0, React DOM 19.3.0
+- Graph Canvas: @xyflow/react v12.12.0 (Modern React Flow)
+- Styling: Tailwind CSS v4 with @tailwindcss/turbopack
+- Icons: Lucide React (lucide-react v1.63.0)
+
+How to Run Frontend:
+  cd frontend
+  npm run dev
+  Runs locally at http://localhost:3000
+
+--------------------------------------------------------------------------------
+3. CURRENT STATE OF THE FRONTEND (WHAT IS ALREADY BUILT)
+--------------------------------------------------------------------------------
+All primary UI workspace functionality is currently implemented in
+`frontend/src/app/page.tsx` with ReactFlowProvider and custom state management:
+
+1. Top Navigation & Control Bar:
+   - ArchPilot branding with GitBranch badge and "BETA" pill.
+   - Editable Project Title: Live inline input updating diagram name.
+   - Persistence status indicator: "All changes saved" / "Unsaved changes".
+   - "Export JSON" action: Generates and downloads `architecture.json` containing
+     project metadata, nodes, and edges.
+   - "Analyze design" trigger: Action button to initiate AI architectural review.
+
+2. Component Catalog Sidebar (Left Pane):
+   - 8 canonical component categories:
+     * client: "Client" (Web or mobile app) - Violet / Cloud icon
+     * api: "API Gateway" (Entry point for requests) - Blue / Workflow icon
+     * loadbalancer: "Load Balancer" (Traffic distribution) - Teal / Network icon
+     * server: "App Server" (Business logic) - Cyan / Server icon
+     * cache: "Cache" (Fast in-memory access) - Amber / Layers3 icon
+     * database: "Database" (Persistent data) - Emerald / Database icon
+     * queue: "Message Queue" (Async communication) - Pink / Activity icon
+     * storage: "Object Storage" (Files and media) - Indigo / HardDrive icon
+   - Drag-and-drop: Uses HTML5 Drag & Drop API (`application/archpilot` MIME type)
+     mapped via `screenToFlowPosition` to place components directly where dropped.
+   - Click-to-add: Staggered auto-positioning on click.
+
+3. Interactive Graph Canvas (Center Pane):
+   - Full React Flow (`@xyflow/react`) canvas rendering with custom styling.
+   - Initial pre-loaded pipeline: Client -> API Gateway -> App Server -> Database.
+   - Animated smoothstep edges (`onConnect` handler with `addEdge`).
+   - Controls: Zoom in/out, fit view, lock.
+   - MiniMap: Interactive mini-map with node kind border colors.
+   - Background: Dotted grid pattern (`BackgroundVariant.Dots`).
+   - Keyboard interaction: Backspace/Delete removes selected node and connected edges.
+   - Selection interaction: Node click opens inspector; pane click deselects.
+
+4. Property Inspector (Right Pane):
+   - Toggleable inspector drawer.
+   - Active Node Inspector:
+     * Editable component label.
+     * Component type badge (`kind`).
+     * Unique Node ID code tag.
+     * "Delete component" destructive button.
+   - Empty state: Clean placeholder when no component is selected.
+   - AI Design Review Teaser: Shows current readiness status ("Analysis engine not connected").
+
+--------------------------------------------------------------------------------
+4. CANONICAL DATA CONTRACTS
+--------------------------------------------------------------------------------
+
+Component Kinds:
+  type ComponentKind =
+    | "client"
+    | "api"
+    | "loadbalancer"
+    | "server"
+    | "database"
+    | "cache"
+    | "queue"
+    | "storage";
+
+Node Data Schema (@xyflow/react):
+  {
+    "id": "node-1",
+    "type": "default",
+    "position": { "x": 100, "y": 100 },
+    "data": {
+      "label": "API Gateway",
+      "kind": "api"
+    },
+    "style": {
+      "background": "#EFF6FF",
+      "border": "1px solid #93C5FD",
+      "borderRadius": 12,
+      "padding": 14,
+      "width": 170,
+      "fontWeight": 600,
+      "fontSize": 13,
+      "color": "#172033"
+    }
+  }
+
+Edge Schema:
+  {
+    "id": "xy-edge__node-1-node-2",
+    "source": "node-1",
+    "target": "node-2",
+    "animated": true,
+    "type": "smoothstep"
+  }
+
+Exported Architecture JSON Schema:
+  {
+    "name": "Untitled Architecture",
+    "description": "Real-time payment processing system...",
+    "concerns": "Single points of failure, database write bottleneck...",
+    "nodes": [...],
+    "edges": [...],
+    "exportedAt": "2026-10-29T18:30:00.000Z"
+  }
+
+Architecture Analysis Request Schema (Frontend -> Server):
+  {
+    "projectName": string,
+    "description"?: string,
+    "concerns"?: string,
+    "nodes": Node<ArchitectureNodeData>[],
+    "edges": Edge[],
+    "trafficFilters"?: {
+      "peakRps"?: number,
+      "expectedUsers"?: number
+    }
+  }
+
+Planned Architecture Analysis Response Schema (Server -> Frontend):
+  {
+    "summary": string,
+    "scores": {
+      "scalability": number,  // 1 - 10
+      "reliability": number,  // 1 - 10
+      "costEfficiency": number, // 1 - 10
+      "security": number      // 1 - 10
+    },
+    "structuralFindings": {
+      "spofs": string[],               // Node IDs identified as articulation points
+      "bottlenecks": string[],         // Nodes with high fan-in
+      "cycles": string[][],            // Cycle node sequences
+      "antiPatterns": [
+        {
+          "code": string,              // e.g. "DIRECT_CLIENT_TO_DB"
+          "severity": "critical" | "warning" | "info",
+          "message": string,
+          "affectedNodes": string[]
+        }
+      ]
+    },
+    "aiRecommendations": [
+      {
+        "title": string,
+        "description": string,
+        "actionType": "add_node" | "change_edge" | "configure_cache",
+        "impact": string
+      }
+    ]
+  }
+
+--------------------------------------------------------------------------------
+5. NEXT STEPS & IMPLEMENTATION ROADMAP
+--------------------------------------------------------------------------------
+Phase 1: Visual Canvas & State (COMPLETED)
+  - Next.js 16 + React 19 + TypeScript frontend.
+  - Component Catalog palette (7 types) with drag-and-drop & click-to-add.
+  - Interactive @xyflow/react canvas with animated smoothstep edges.
+  - Property Inspector for editing node names and deleting components.
+  - JSON diagram export.
+
+Phase 1b: PlantUML / Code Importer & Auto-Layout (NEXT)
+  - Text-based architecture input (PlantUML / Mermaid or JSON import).
+  - Deterministic client/server auto-layout (Dagre or BFS topological layering).
+  - Custom node components with protocol badges (HTTP, gRPC, WebSocket) and status handles.
+
+Phase 2: Deterministic Computation Engine (`server/src/services/engine/`) (COMPLETED)
+  - Two-Phase Pipeline architecture:
+    * Phase 1 (`buildGraphProfile`): 3-4 structured passes compute all topological facts
+      (articulation points, cycles, connected components, reachability, orphans, degrees)
+      into an immutable GraphProfile object.
+    * Phase 2 (`runStructuralRules`): 18 structural rules execute in a single read-only pass
+      emitting findings without re-traversing the graph.
+  - Complete Structural Rules Catalog:
+    * Connectivity: TOPO_ORPHAN_NODE, TOPO_DISCONNECTED_SUBGRAPH, TOPO_NO_ENTRY_POINT
+    * Flow: TOPO_UNREACHABLE_FROM_ENTRY, TOPO_DEAD_END_SERVER, TOPO_DB_UNREACHABLE, WRONG_FLOW_REVERSED
+    * Security: SEC_CLIENT_DIRECT_DB, SEC_NO_AUTH, SEC_DB_NO_FIREWALL
+    * Reliability: SPOF_CRITICAL_PATH, REL_CIRCULAR_DEPENDENCY, REL_QUEUE_NO_CONSUMER,
+      REL_QUEUE_NO_PUBLISHER, REL_CACHE_WITHOUT_DB
+    * Scalability: UNDER_NO_LB_MULTI_SERVER, REL_LB_SINGLE_TARGET, UNNECESSARY_CONNECTION
+  - `scoring.js`: Multi-dimensional 1-10 rubric (Security, Reliability, Scalability) with partial scoring.
+  - Express API: `POST /api/analyze` connected to frontend "Analyze design" action.
+  - Multi-status canvas visualization (Red = SPOF, Amber = Cycle, Purple = Unreachable, Gray dashed = Orphan).
+
+Phase 3: Gemini LLM Integration (`server/src/services/llm/`)
+  - Integration with `@google/genai` or official Google Gemini API SDK.
+  - Structured prompt assembling graph summary, computed SPOFs, and detected anti-patterns.
+  - Generates actionable architectural narration and variant proposals.
+
+Phase 4: Frontend Analysis Review Modal & Real-Time Flow
+  - Connect "Analyze design" button to backend analysis endpoint.
+  - Visual highlight of risky nodes (glowing red border on SPOFs, amber on bottlenecks).
+  - Drawer / Modal rendering the breakdown: Scores, Anti-Patterns, and AI Suggestions.
+
+Phase 5: Persistence & Project Management
+  - Express REST API routes to save/load architecture designs.
+  - MongoDB Atlas or PostgreSQL design persistence.
+
+--------------------------------------------------------------------------------
+6. GUIDELINES FOR ANY AI CODING ASSISTANT
+--------------------------------------------------------------------------------
+1. Frontend is Next.js 16 App Router in TypeScript (.tsx, .ts).
+   - Use React 19 hooks and `@xyflow/react` idioms.
+   - Do not degrade TypeScript types; use strict type checking.
+2. Styling is Tailwind CSS v4.
+   - Use standard Tailwind utility classes and modern flex/grid layouts.
+3. Separation of Concerns:
+   - Keep canvas layout and node components modular (e.g. `src/components/canvas/`,
+     `src/components/inspector/`).
+   - Keep graph computation logic in pure, testable utility functions.
+4. Deterministic Engine Integrity:
+   - Never prompt the LLM to hallucinate graph metrics (SPOFs, node counts, cycle detection).
+   - The backend graph engine must compute the facts; the LLM explains them.
+5. Canvas Performance:
+   - When updating nodes or edges, use functional state updates (`setNodes`, `setEdges`)
+     to avoid stale closures and excessive re-renders.
+================================================================================
