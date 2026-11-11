@@ -33,7 +33,7 @@ export function loadEmbeddingsIndex() {
 }
 
 /**
- * Embeds a single query string using Gemini text-embedding-004.
+ * Embeds a single query string using Gemini embedding models (gemini-embedding-001).
  *
  * @param {string} text Query string
  * @param {string} apiKey Gemini API key
@@ -45,14 +45,26 @@ export async function embedQuery(text, apiKey = process.env.GEMINI_API_KEY) {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+  const candidateModels = ["gemini-embedding-001", "gemini-embedding-2"];
 
-  const result = await model.embedContent({
-    content: { parts: [{ text }] },
-    taskType: "RETRIEVAL_QUERY",
-  });
+  let lastErr = null;
+  for (const m of candidateModels) {
+    try {
+      const model = genAI.getGenerativeModel({ model: m });
+      const result = await model.embedContent({
+        content: { parts: [{ text }] },
+        taskType: "RETRIEVAL_QUERY",
+        outputDimensionality: 768,
+      });
+      if (result && result.embedding && result.embedding.values) {
+        return normalizeVector(result.embedding.values);
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
 
-  return normalizeVector(result.embedding.values);
+  throw lastErr || new Error("Gemini query embedding failed across candidate models.");
 }
 
 /**

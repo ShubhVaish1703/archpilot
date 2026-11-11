@@ -66,7 +66,7 @@ Many AI tools simply pass raw text or diagrams to an LLM and ask for generic adv
 ### Stack Overview
 * **Frontend**: Next.js 16.4.3 (App Router), React 19.3.0, TypeScript 5, `@xyflow/react` v12.12.0 (React Flow), Tailwind CSS v4, Lucide React icons.
 * **Backend**: Node.js (v22+), Express 4.21, ES Modules (`"type": "module"`), `@google/generative-ai` v0.24, `gray-matter` v4.0, `dotenv`.
-* **Testing**: Node.js native test runner (`assert/strict`), 25 automated unit tests across 5 test suites.
+* **Testing**: Node.js native test runner (`assert/strict`), 29 automated unit tests across 6 test suites.
 
 ### Repository Layout
 ```
@@ -272,12 +272,23 @@ Run test suite: `cd server && npm test`
   - `graphChanges`: Recommended additions, edge rewires, and node removals.
   - `graph`: Concrete React Flow `{ nodes, edges }` JSON for instant preview.
 
-### Phase 4: Frontend Variant Review & Interactive Canvas Swap
-* Add a "Design Variants" tab inside the Evaluation Report modal.
-* Display the 4 variant cards side-by-side with score projections, cost estimates, and trade-offs.
-* Provide an **"Apply to Canvas" / "Preview Variant"** button that lets the user visually swap their current canvas graph with the AI-suggested architecture variant.
+### Phase 4: Frontend Variant Review & Interactive Canvas Swap (COMPLETED)
+* **Dedicated Comparison Page (`/variants`)**:
+  - 4 variant tabs with dynamic metrics, SLA, throughput, and cloud spend.
+  - Interactive `@xyflow/react` canvas with `fitView`, smooth animated edges, direction arrows, and light theme palette.
+  - Side specifications panel with target SLA, Throughput, and key Pros & Cons.
+* **Bi-directional Canvas Integration (Sub-Phase 3)**:
+  - Top Bar and Evaluation Modal CTA: "Generate 4 Variants ✨" calling `POST /api/generate-variants`.
+  - Session synchronization: Canvas nodes and edges pass to `/variants` via `sessionStorage`.
+  - **"Apply Architecture to Canvas"**: 1-click action to inject the selected variant back into the primary editor (`/`) with toast notification.
+* **Side-by-Side Before vs. After Score Comparison Modal (Sub-Phase 4)**:
+  - Triggered via `id="compare-report-btn"` ("Compare with My Design Report").
+  - Summary Delta Ribbon: Original Score vs. Variant Score with delta indicator (e.g. `+4.9` 🟢).
+  - Multi-dimensional breakdown: Side-by-side comparison across Security, Reliability, and Scalability.
+  - SPOF verification: Shows original SPOFs vs. zero-SPOF resilient topology.
+  - Issue-by-issue resolution matrix: Automatically displays all original anti-patterns resolved by the AI variant (`resolvedRules`).
 
-### Phase 5: Architecture Persistence & Cloud Sync
+### Phase 5: Architecture Persistence & Cloud Sync (Planned)
 * Database storage (PostgreSQL or SQLite) to save and load user projects.
 * REST API endpoints:
   - `GET /api/projects`: List user diagrams.
@@ -296,7 +307,8 @@ Run test suite: `cd server && npm test`
 ```bash
 cd server
 npm install
-npm test              # Runs all 25 automated tests
+npm test              # Runs all 29 automated tests across 6 test suites
+```
 
 # To generate real Gemini 768-dim embeddings:
 GEMINI_API_KEY="your-key" npm run seed:embeddings

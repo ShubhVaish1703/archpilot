@@ -109,6 +109,35 @@ export function findArticulationPoints(graph) {
 }
 
 /**
+ * Evaluates whether a component represents a cloud-managed service that is inherently multi-AZ
+ * (e.g. S3 object storage with 11 9s durability, global Anycast CloudFront/Cloudflare CDN PoPs).
+ */
+export function isInherentlyRedundant(node) {
+  if (!node) return false;
+  const kind = node.data?.kind || "";
+  const label = (node.data?.label || "").toLowerCase();
+
+  // Clients are external callers, not internal application SPOFs
+  if (kind === "client") return true;
+
+  // Cloud object storage is distributed and multi-AZ by design (e.g. S3 11 9s durability)
+  if (kind === "storage") return true;
+
+  // Global Anycast Edge CDN networks (hundreds of edge PoPs)
+  if (
+    label.includes("cdn") ||
+    label.includes("anycast") ||
+    label.includes("edge pop") ||
+    label.includes("cloudflare") ||
+    label.includes("cloudfront")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Checks if removing candidateId disconnects sourceId from targetId (directed reachability).
  */
 export function isNodeCriticalBetween(graph, sourceId, targetId, candidateId) {
@@ -327,7 +356,7 @@ export function buildGraphProfile(nodes = [], edges = []) {
   if (entryNodes.length > 0 && dataNodes.length > 0) {
     for (const apId of articulationPoints) {
       const apNode = nodeMap.get(apId);
-      if (apNode?.data?.kind === "client") continue;
+      if (isInherentlyRedundant(apNode)) continue;
 
       for (const entry of entryNodes) {
         for (const dataNode of dataNodes) {

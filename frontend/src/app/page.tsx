@@ -3,10 +3,12 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type DragEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   ReactFlowProvider,
   useReactFlow,
@@ -328,6 +330,125 @@ function getNodeStyle(
   };
 }
 
+/**
+ * Automatically spaces architecture nodes across clear columns and staggers asynchronous pipelines.
+ */
+function layoutArchitectureGraph(
+  nodes: Node<ArchitectureNodeData>[]
+): Node<ArchitectureNodeData>[] {
+  if (!nodes || nodes.length === 0) return [];
+
+  const roles: Record<string, Node<ArchitectureNodeData>[]> = {
+    client: [],
+    ingress: [],
+    compute: [],
+    cache: [],
+    queue: [],
+    worker: [],
+    storage: [],
+  };
+
+  nodes.forEach((node) => {
+    const kind = node.data?.kind || "server";
+    const label = (node.data?.label || "").toLowerCase();
+
+    if (kind === "client") {
+      roles.client.push(node);
+    } else if (kind === "api" || kind === "loadbalancer") {
+      roles.ingress.push(node);
+    } else if (kind === "cache") {
+      roles.cache.push(node);
+    } else if (kind === "queue") {
+      roles.queue.push(node);
+    } else if (kind === "database" || kind === "storage") {
+      roles.storage.push(node);
+    } else if (
+      label.includes("worker") ||
+      label.includes("consumer") ||
+      label.includes("ingestion") ||
+      label.includes("transcoder") ||
+      label.includes("ledger") ||
+      label.includes("task")
+    ) {
+      roles.worker.push(node);
+    } else {
+      roles.compute.push(node);
+    }
+  });
+
+  const COL_X = {
+    client: 60,
+    ingress: 320,
+    compute: 580,
+    queue: 840,
+    cache: 840,
+    worker: 1100,
+    storage: 1360,
+  };
+
+  const getStaggeredY = (index: number, total: number, baseY = 200, stepY = 140) => {
+    if (total <= 1) return baseY;
+    const startY = baseY - ((total - 1) * stepY) / 2;
+    return startY + index * stepY;
+  };
+
+  const nodePositions = new Map<string, { x: number; y: number }>();
+
+  roles.client.forEach((n, i) =>
+    nodePositions.set(n.id, {
+      x: COL_X.client,
+      y: getStaggeredY(i, roles.client.length, 200),
+    })
+  );
+
+  roles.ingress.forEach((n, i) =>
+    nodePositions.set(n.id, {
+      x: COL_X.ingress,
+      y: getStaggeredY(i, roles.ingress.length, 200),
+    })
+  );
+
+  roles.compute.forEach((n, i) =>
+    nodePositions.set(n.id, {
+      x: COL_X.compute,
+      y: getStaggeredY(i, roles.compute.length, 200),
+    })
+  );
+
+  roles.cache.forEach((n, i) =>
+    nodePositions.set(n.id, {
+      x: COL_X.cache,
+      y: getStaggeredY(i, roles.cache.length, 80, 100),
+    })
+  );
+
+  roles.queue.forEach((n, i) =>
+    nodePositions.set(n.id, {
+      x: COL_X.queue,
+      y: getStaggeredY(i, roles.queue.length, 320, 120),
+    })
+  );
+
+  roles.worker.forEach((n, i) =>
+    nodePositions.set(n.id, {
+      x: COL_X.worker,
+      y: getStaggeredY(i, roles.worker.length, 320, 120),
+    })
+  );
+
+  roles.storage.forEach((n, i) =>
+    nodePositions.set(n.id, {
+      x: COL_X.storage,
+      y: getStaggeredY(i, roles.storage.length, 200, 140),
+    })
+  );
+
+  return nodes.map((node) => ({
+    ...node,
+    position: nodePositions.get(node.id) || node.position,
+  }));
+}
+
 function Workspace() {
   const { screenToFlowPosition } = useReactFlow();
   const [nodes, setNodes, onNodesChange] =
@@ -344,15 +465,24 @@ function Workspace() {
 
   const [projectDescription, setProjectDescription] = useState("");
   const [projectConcerns, setProjectConcerns] = useState("");
+  const [peakRps, setPeakRps] = useState<string>("");
+  const [expectedUsers, setExpectedUsers] = useState<string>("");
   const [inspectorTab, setInspectorTab] = useState<"component" | "intent">(
     "intent",
   );
 
+  const router = useRouter();
   const [saved, setSaved] = useState(true);
 
   const [showInspector, setShowInspector] = useState(true);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGeneratingVariants, setIsGeneratingVariants] = useState(false);
+  const [appliedToast, setAppliedToast] = useState<{
+    message: string;
+    variantName?: string;
+  } | null>(null);
+
   const [analysisResult, setAnalysisResult] =
     useState<AnalysisResult | null>(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
@@ -361,6 +491,103 @@ function Workspace() {
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(7);
+
+  // Check if an architecture was applied from the /variants page
+  useEffect(() => {
+    try {
+      const appliedRaw = sessionStorage.getItem("archpilot_applied_architecture");
+      if (appliedRaw) {
+        const parsed = JSON.parse(appliedRaw);
+        if (parsed.nodes && parsed.edges) {
+          const spacedNodes = layoutArchitectureGraph(parsed.nodes);
+          setNodes(spacedNodes);
+          setEdges(parsed.edges);
+          setSaved(false);
+          const name = parsed.variantName || "Architecture variant";
+          setAppliedToast({
+            message: `Applied "${name}" to canvas!`,
+            variantName: name,
+          });
+          setTimeout(() => setAppliedToast(null), 5000);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load applied architecture from sessionStorage", e);
+    } finally {
+      sessionStorage.removeItem("archpilot_applied_architecture");
+    }
+  }, [setNodes, setEdges]);
+
+  const handleGenerateVariants = async () => {
+    // 1. Mandatory User Context Enforcement
+    if (!projectDescription.trim() && !projectConcerns.trim()) {
+      setShowInspector(true);
+      setInspectorTab("intent");
+      setContextInputError(
+        "Please provide context: describe your system goals or concerns before generating AI variants."
+      );
+      return;
+    }
+
+    setContextInputError(null);
+    setIsGeneratingVariants(true);
+
+    try {
+      const trafficFilters =
+        peakRps || expectedUsers
+          ? {
+              peakRps: peakRps ? Number(peakRps) : null,
+              expectedUsers: expectedUsers ? Number(expectedUsers) : null,
+            }
+          : null;
+
+      const response = await fetch(`${API_BASE_URL}/api/generate-variants`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectName,
+          description: projectDescription,
+          concerns: projectConcerns,
+          trafficFilters,
+          nodes,
+          edges,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.blockedByGatekeeper) {
+          alert(
+            `Gatekeeper Blocked Variant Generation:\n${data.reason || "Please resolve structural flaws before generating variants."}`
+          );
+          if (data.originalAnalysis) {
+            setAnalysisResult(data.originalAnalysis);
+            setShowAnalysisModal(true);
+          }
+          return;
+        }
+        throw new Error(data.details || data.error || `Server returned ${response.status}`);
+      }
+
+      // Save to sessionStorage
+      sessionStorage.setItem("archpilot_variants_data", JSON.stringify(data));
+      sessionStorage.setItem("archpilot_project_name", projectName);
+
+      // Navigate to /variants
+      router.push("/variants");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to generate architecture variants";
+      alert(
+        `Could not connect to variant generator at ${API_BASE_URL}.\nMake sure the server is running:\n  cd server && npm start\n\nError: ${msg}`
+      );
+    } finally {
+      setIsGeneratingVariants(false);
+    }
+  };
 
   const handleAnalyze = async () => {
     // 1. Mandatory User Context Enforcement
@@ -378,6 +605,14 @@ function Workspace() {
     setAnalysisError(null);
 
     try {
+      const trafficFilters =
+        peakRps || expectedUsers
+          ? {
+              peakRps: peakRps ? Number(peakRps) : null,
+              expectedUsers: expectedUsers ? Number(expectedUsers) : null,
+            }
+          : null;
+
       const response = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: "POST",
         headers: {
@@ -387,6 +622,7 @@ function Workspace() {
           projectName,
           description: projectDescription,
           concerns: projectConcerns,
+          trafficFilters,
           nodes,
           edges,
         }),
@@ -625,19 +861,36 @@ function Workspace() {
             Export JSON
           </button>
           <button
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
             onClick={handleAnalyze}
             disabled={isAnalyzing}
           >
             {isAnalyzing ? (
               <>
-                <Loader2 size={15} className="animate-spin" />
+                <Loader2 size={15} className="animate-spin text-slate-500" />
                 Analyzing...
               </>
             ) : (
               <>
-                <Sparkles size={15} />
+                <Activity size={15} className="text-slate-600" />
                 Analyze design
+              </>
+            )}
+          </button>
+          <button
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+            onClick={handleGenerateVariants}
+            disabled={isGeneratingVariants}
+          >
+            {isGeneratingVariants ? (
+              <>
+                <Loader2 size={15} className="animate-spin" />
+                Generating Variants...
+              </>
+            ) : (
+              <>
+                <Sparkles size={15} />
+                Generate 4 Variants
               </>
             )}
           </button>
@@ -1022,6 +1275,106 @@ function Workspace() {
                   </div>
                 </div>
 
+                {/* Optional Workload & Traffic Sizing */}
+                <div className="pt-3 border-t border-slate-100">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                    <Activity size={14} className="text-emerald-600" />
+                    <span>Workload &amp; Scale (Optional)</span>
+                  </label>
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    Provide expected peak load to evaluate capacity &amp; sizing rules.
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-slate-500 font-medium">Peak RPS</span>
+                      <input
+                        type="number"
+                        placeholder="e.g. 1000"
+                        value={peakRps}
+                        onChange={(e) => {
+                          setPeakRps(e.target.value);
+                          setSaved(false);
+                        }}
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 font-medium">Active Users</span>
+                      <input
+                        type="number"
+                        placeholder="e.g. 50000"
+                        value={expectedUsers}
+                        onChange={(e) => {
+                          setExpectedUsers(e.target.value);
+                          setSaved(false);
+                        }}
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+                  </div>
+                  {/* Quick Scale Presets */}
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPeakRps("300");
+                        setExpectedUsers("5000");
+                        setSaved(false);
+                      }}
+                      className={`rounded border px-2 py-0.5 text-[10px] font-medium transition ${
+                        peakRps === "300"
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800 font-bold"
+                          : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      MVP (300 RPS)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPeakRps("5000");
+                        setExpectedUsers("100000");
+                        setSaved(false);
+                      }}
+                      className={`rounded border px-2 py-0.5 text-[10px] font-medium transition ${
+                        peakRps === "5000"
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-800 font-bold"
+                          : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      Growth (5k RPS)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPeakRps("50000");
+                        setExpectedUsers("1000000");
+                        setSaved(false);
+                      }}
+                      className={`rounded border px-2 py-0.5 text-[10px] font-medium transition ${
+                        peakRps === "50000"
+                          ? "border-purple-300 bg-purple-50 text-purple-800 font-bold"
+                          : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      High-Scale (50k+ RPS)
+                    </button>
+                    {(peakRps || expectedUsers) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPeakRps("");
+                          setExpectedUsers("");
+                          setSaved(false);
+                        }}
+                        className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-600"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 {selectedNode && (
                   <button
                     onClick={() => setInspectorTab("component")}
@@ -1138,7 +1491,7 @@ function Workspace() {
               {/* Architecture Completeness Gatekeeper Banner */}
               {analysisResult.gatekeeper && (
                 analysisResult.gatekeeper.canGenerateVariants ? (
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-emerald-900 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-emerald-900 shadow-xs">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs">
                         <CheckCircle2 size={18} />
@@ -1159,6 +1512,26 @@ function Workspace() {
                         </p>
                       </div>
                     </div>
+                    <button
+                      onClick={() => {
+                        setShowAnalysisModal(false);
+                        handleGenerateVariants();
+                      }}
+                      disabled={isGeneratingVariants}
+                      className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {isGeneratingVariants ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" />
+                          <span>Synthesizing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={13} />
+                          <span>Generate 4 Variants</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 ) : (
                   <div className="rounded-xl border border-rose-300 bg-rose-50/90 p-4 text-rose-950 shadow-xs">
@@ -1218,9 +1591,14 @@ function Workspace() {
                     {analysisResult.scoring.overall}
                     <span className="text-xs font-semibold text-indigo-400">/10</span>
                   </div>
-                  {analysisResult.scoring.partial && (
-                    <span className="mt-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                      Partial (No traffic)
+                  {analysisResult.scoring.partial ? (
+                    <span className="mt-1 rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                      Structural Audit
+                    </span>
+                  ) : (
+                    <span className="mt-1 rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 flex items-center gap-1">
+                      <CheckCircle2 size={11} />
+                      {peakRps ? `${Number(peakRps).toLocaleString()} RPS Sized` : "Traffic-Sized"}
                     </span>
                   )}
                 </div>
@@ -1491,6 +1869,29 @@ function Workspace() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Applied Architecture Notification Banner */}
+      {appliedToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex max-w-md items-center gap-3 rounded-2xl border border-emerald-300 bg-white p-4 text-slate-800 shadow-xl transition">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+            <CheckCircle2 size={20} />
+          </div>
+          <div className="flex-1 text-xs">
+            <strong className="block text-sm font-bold text-slate-900">
+              {appliedToast.message}
+            </strong>
+            <p className="text-slate-500 mt-0.5">
+              Canvas updated with production topology and relative coordinates.
+            </p>
+          </div>
+          <button
+            onClick={() => setAppliedToast(null)}
+            className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 text-xs"
+          >
+            ✕
+          </button>
         </div>
       )}
     </main>
