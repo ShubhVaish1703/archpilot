@@ -1,6 +1,6 @@
 # ArchPilot — Project Context & Comprehensive Technical Specification
 
-> **Document Version**: 2.0.0  
+> **Document Version**: 3.0.0  
 > **Repository Root**: `/Users/mac/Desktop/minorproject_MCA/archpilot`  
 > **Last Updated**: November 2026  
 > **Target Audience**: Developers, Academic Evaluators, and AI Assistants onboarding to this codebase.
@@ -201,16 +201,54 @@ Acts as an intelligent circuit breaker between the deterministic engine and AI g
 
 ### In-Memory RAG & Knowledge Layer (`server/src/services/rag/`)
 * **Curated Corpus (`server/knowledge/*.md`)**: 12 modular documents covering fundamental scaling principles, caching, messaging, database sharding, rate limiting, and canonical system design case studies (Alex Xu Vol 1 & 2).
-* **Semantic Chunker (`chunker.js`)**: Extracts YAML frontmatter (`tags`, `applicable_components`, `related_rules`) and splits markdown by `## ` and `### ` headers into 134 semantic chunks with context enrichment.
+* **Semantic Chunker (`chunker.js`)**: Extracts YAML frontmatter (`tags`, `applicable_components`, `related_rules`) and splits markdown by `## ` and `### ` headers into 138 semantic chunks with context enrichment.
 * **Vector Engine (`similarity.js`)**: Unit-normalizes vectors ($\|\mathbf{v}\| = 1$) for ultra-fast dot-product cosine similarity. Applies metadata boosts:
   - **+0.12 score boost** if chunk addresses detected engine findings (`relatedRules`).
   - **+0.05 score boost** if chunk matches active canvas components (`applicableComponents`).
-* **Seeder Script (`server/scripts/seedEmbeddings.js`)**: Supports both offline dry-run testing and live Gemini `text-embedding-004` batching. Generates [`server/knowledge/embeddings.json`](file:///Users/mac/Desktop/minorproject_MCA/archpilot/server/knowledge/embeddings.json) (3 MB).
-* **In-Memory Retriever (`retriever.js`)**: Loads the entire 134-chunk vector database into Node.js RAM in **$< 20\text{ ms}$**. Requires zero external databases (no Pinecone, no Chroma, no Docker containers).
+* **Seeder Script (`server/scripts/seedEmbeddings.js`)**: Supports both offline dry-run testing and live Gemini embedding generation with `gemini-embedding-001` (768 dimensions). Generates [`server/knowledge/embeddings.json`](file:///Users/mac/Desktop/minorproject_MCA/archpilot/server/knowledge/embeddings.json) (3 MB).
+* **In-Memory Retriever (`retriever.js`)**: Loads the entire 138-chunk vector database into Node.js RAM in **$< 20\text{ ms}$**. Requires zero external databases (no Pinecone, no Chroma, no Docker containers).
 
 ---
 
-## 4. Current Test Suite Status (25/25 Passing)
+### Phase 3: RAG-Grounded Architecture Variant Generator (`server/src/services/rag/generator.js`)
+* **Multi-Model Gemini Cascade**: Upgraded with resilient fallback across candidate models: `gemini-3.5-flash-lite`, `gemini-3.5-flash`, `gemini-3.8-flash`, and `gemini-flash-latest`.
+* **Domain-Specific Architectural Synthesis**: Intelligently identifies application domain (e.g. LLM Chatbot / Gemini API, E-commerce, Video Streaming):
+  - For AI / Chatbots: Synthesizes Token-Bucket Rate Limiters, SSE streaming orchestrator servers, Gemini API egress gateways, Redis sliding-window session caches, vector stores (pgvector/Qdrant), and asynchronous document ingestion worker fleets.
+* **Zero-SPOF Scale Tiers**:
+  - Enforces redundant ingress load balancers (`lb-1` & `lb-2`), multi-AZ compute fleets (`server-1` & `server-2`), clustered message brokers, consumer worker fleets, and primary-standby database replication with automated failover.
+  - Achieves **10/10 Reliability** and **0 SPOFs** on High-Availability and High-Throughput variants.
+* **Component Breakdown Sanitizer**: Automatically inspects `graph.nodes` and ensures 100% of generated nodes receive a detailed role and concrete avoidance threshold.
+* **DUAL-ENGINE AUDIT PASS**: Every generated variant is mathematically re-audited by `analyzeArchitecture()`, verifying SLA, SPOFs, cycles, and tracking eliminated original flaws (`resolvedRules`).
+
+---
+
+### Phase 4: Frontend Variant Review & Interactive Canvas Swap (`/variants`)
+* **Dedicated Comparison Dashboard (`/variants`)**:
+  - 4 variant tabs with dynamic metrics, SLA, throughput, and cloud spend.
+  - Interactive `@xyflow/react` canvas with `fitView`, smooth animated edges, direction arrows, and light theme palette.
+* **Automated 2D Graph Layout Normalizer (`layoutArchitectureGraph`)**:
+  - Enforces strict 260px horizontal column spacing: Client ($x=60$), Gateway ($x=320$), Compute ($x=580$), Cache ($x=840, y=80$), Queue ($x=840, y=320$), Worker ($x=1100, y=320$), Database ($x=1360$).
+  - Staggers asynchronous queues and consumer workers down to $y = 320$, eliminating card collision.
+* **Architecture Deep Dive & Component Avoidance Modal**:
+  - Maps 100% of canvas components with color-coded badges, system roles, and actionable avoidance thresholds.
+* **Side-by-Side Before vs. After Score Comparison Modal**:
+  - Summary Delta Ribbon: Original Score vs. Variant Score with delta indicator (e.g. `+1.7` 🟢).
+  - Multi-dimensional breakdown across Security, Reliability, and Scalability.
+  - Tracks resolved original anti-patterns (`resolvedRules`).
+  - Distinguishes between zero-SPOF enterprise tiers and intentional MVP cost trade-offs ($<\$35/\text{mo}$).
+* **Bi-Directional Canvas Application**:
+  - 1-click **"Apply Architecture to Canvas"** injects the selected variant back into the primary editor (`/`) with toast confirmation.
+
+---
+
+### Phase 4b: Workload & Traffic Scale Controls
+* **Dedicated Inspector Inputs**: Optional fields for Peak RPS and Expected Users with 1-click scale presets: `MVP (300 RPS)`, `Growth (5k RPS)`, `High-Scale (50k+ RPS)`.
+* **Audit Transparency**: Displays `Structural Audit` badge when traffic is omitted, and `Traffic-Sized (5,000 RPS)` when specified.
+* **Cloud-Native Managed Calibration (`isInherentlyRedundant`)**: Recognizes multi-AZ cloud storage (S3 with 11 9s durability) and global Anycast CDNs (CloudFront/Cloudflare) as inherently distributed rather than hardware SPOFs.
+
+---
+
+## 4. Current Test Suite Status (29/29 Passing)
 
 Run test suite: `cd server && npm test`
 
@@ -241,7 +279,7 @@ Run test suite: `cd server && npm test`
 ✅ Test 1 Passed: Markdown frontmatter parsing and section chunking work accurately
 ✅ Test 2 Passed: Cosine similarity and vector normalization adhere to mathematical definitions
 ✅ Test 3 Passed: Hybrid ranking boosts chunks matching active engine rules
-✅ Test 4 Passed: Loaded 134 chunks from embeddings.json in 17.20ms
+✅ Test 4 Passed: Loaded 138 chunks from embeddings.json in 18.23ms
 ✅ Test 5 Passed: Offline rule fallback correctly retrieves knowledge context
 
 🧪 Running ArchPilot Architecture Completeness Gatekeeper Tests...
@@ -250,50 +288,31 @@ Run test suite: `cd server && npm test`
 ✅ Test 3 Passed: Disconnected architecture islands block AI generation
 ✅ Test 4 Passed: Connected architecture with SPOF is allowed (design smell, not structural blocker)
 
-🎉 ALL 25 ENGINE, TOPOLOGY, RAG, AND GATEKEEPER TESTS PASSED!
+🧪 Running ArchPilot LLM Generator & Dual-Engine Audit Tests...
+✅ Test 1 Passed: RAG prompt successfully synthesizes intent, engine findings, and book knowledge
+✅ Test 2 Passed: 4-variant synthesis produces valid schemas, trade-offs, and tiered coordinates
+✅ Test 3 Passed: Gatekeeper blocks LLM variant generation on incomplete architecture
+✅ Test 4 Passed: Dual-Engine Audit verifies generated variants mathematically and tracks resolved issues
+
+🎉 ALL 29 UNIT & INTEGRATION TESTS PASSED (6/6 SUITES)!
 ```
 
 ---
 
-## 5. What Remains to Be Done (Planned Next Phases)
+## 5. Project Status & Future Extensions
 
-### Phase 3: RAG-Grounded Architecture Variant Generator (`server/src/services/rag/generator.js`)
-* Connect Gemini LLM (via `@google/generative-ai`) to synthesize engine findings and retrieved knowledge chunks.
-* Produce **4 Distinct Architectural Variants**:
-  1. **Cost-Optimized / Lean MVP**: Lowest hosting cost ($<\$50/\text{mo}$), minimal redundancy, acceptable for internal tools or $<500\text{ QPS}$.
-  2. **High-Availability (Zero SPOF)**: Multi-AZ load balancers, auto-scaled compute instances, primary-standby database failover.
-  3. **High-Throughput / Low-Latency**: Multi-tier Redis caching, read replicas, Kafka asynchronous write buffering, sub-15ms P99 target.
-  4. **Global Distributed / Multi-Region**: Anycast GeoDNS routing, edge CDN, active-active or multi-region database replication.
-* Response contract for each variant:
-  - `name`: Variant title.
-  - `description`: Architectural strategy explanation.
-  - `estimatedCostTier`: e.g., "$ (Low)", "$$ (Medium)", "$$$$ (Enterprise)".
-  - `tradeoffs`: Pros and cons list.
-  - `graphChanges`: Recommended additions, edge rewires, and node removals.
-  - `graph`: Concrete React Flow `{ nodes, edges }` JSON for instant preview.
+### Current Status: 100% Complete & Production-Verified
+The core scope of the **MCA Minor Project** is fully completed, tested, and verified:
+- **Frontend Workspace**: Interactive canvas, component catalog, live glow diagnostics, Inspector goals, scale filters, and export JSON.
+- **Backend Graph Engine**: Tarjan's algorithm, DFS cycles, 18 deterministic rules, weakest-link scoring, and Gatekeeper circuit breaker.
+- **RAG & Knowledge Retrieval**: In-memory vector database loaded from 138 Alex Xu chunks in $<20\text{ ms}$.
+- **LLM Variant Synthesis**: Live Gemini cascade with domain-specific synthesis, zero-SPOF topologies, and dual-engine mathematical auditing.
+- **Comparison & Application**: Side-by-side Before-vs-After comparison, Deep Dive modal with 100% component breakdown, and round-trip canvas application.
 
-### Phase 4: Frontend Variant Review & Interactive Canvas Swap (COMPLETED)
-* **Dedicated Comparison Page (`/variants`)**:
-  - 4 variant tabs with dynamic metrics, SLA, throughput, and cloud spend.
-  - Interactive `@xyflow/react` canvas with `fitView`, smooth animated edges, direction arrows, and light theme palette.
-  - Side specifications panel with target SLA, Throughput, and key Pros & Cons.
-* **Bi-directional Canvas Integration (Sub-Phase 3)**:
-  - Top Bar and Evaluation Modal CTA: "Generate 4 Variants ✨" calling `POST /api/generate-variants`.
-  - Session synchronization: Canvas nodes and edges pass to `/variants` via `sessionStorage`.
-  - **"Apply Architecture to Canvas"**: 1-click action to inject the selected variant back into the primary editor (`/`) with toast notification.
-* **Side-by-Side Before vs. After Score Comparison Modal (Sub-Phase 4)**:
-  - Triggered via `id="compare-report-btn"` ("Compare with My Design Report").
-  - Summary Delta Ribbon: Original Score vs. Variant Score with delta indicator (e.g. `+4.9` 🟢).
-  - Multi-dimensional breakdown: Side-by-side comparison across Security, Reliability, and Scalability.
-  - SPOF verification: Shows original SPOFs vs. zero-SPOF resilient topology.
-  - Issue-by-issue resolution matrix: Automatically displays all original anti-patterns resolved by the AI variant (`resolvedRules`).
-
-### Phase 5: Architecture Persistence & Cloud Sync (Planned)
-* Database storage (PostgreSQL or SQLite) to save and load user projects.
-* REST API endpoints:
-  - `GET /api/projects`: List user diagrams.
-  - `POST /api/projects`: Save current canvas state.
-  - `GET /api/projects/:id`: Load canvas state.
+### Optional Future Extensions (Post-Minor Project)
+- **Multi-Tenant Cloud Sync**: User accounts with PostgreSQL/Prisma or SQLite to persist and share architecture diagrams via public URLs (`GET /api/projects/:id`).
+- **Infrastructure as Code (IaC) Export**: One-click generation of Terraform or AWS CloudFormation templates directly from the synthesized architecture graph.
+- **Real-Time Cost Calculator**: Live cloud provider pricing API integration (AWS Pricing API) to calculate exact hourly compute and egress estimates.
 
 ---
 
@@ -308,10 +327,6 @@ Run test suite: `cd server && npm test`
 cd server
 npm install
 npm test              # Runs all 29 automated tests across 6 test suites
-```
-
-# To generate real Gemini 768-dim embeddings:
-GEMINI_API_KEY="your-key" npm run seed:embeddings
 
 # Start Express server:
 npm start             # Runs on http://localhost:5001
@@ -321,5 +336,6 @@ npm start             # Runs on http://localhost:5001
 ```bash
 cd frontend
 npm install
-npm run dev           # Runs on http://localhost:3000
+npm run build         # Verifies Next.js 16 Webpack production build (0 errors)
+npm run dev           # Runs development server on http://localhost:3000
 ```

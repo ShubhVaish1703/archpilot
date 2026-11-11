@@ -450,7 +450,7 @@ function layoutArchitectureGraph(
 }
 
 function Workspace() {
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const [nodes, setNodes, onNodesChange] =
     useNodesState<Node<ArchitectureNodeData>>(initialNodes);
 
@@ -682,12 +682,26 @@ function Workspace() {
 
       const id = `node-${idRef.current++}`;
 
+      const COL_X: Record<ComponentKind, number> = {
+        client: 60,
+        api: 320,
+        loadbalancer: 320,
+        server: 580,
+        cache: 840,
+        queue: 840,
+        storage: 1360,
+        database: 1360,
+      };
+
+      const existingSameKind = nodes.filter((n) => n.data?.kind === kind).length;
+      const defaultY = kind === "queue" ? 320 : kind === "cache" ? 80 : 200;
+
       const newNode: Node<ArchitectureNodeData> = {
         id,
         type: "default",
         position: position ?? {
-          x: 180 + (nodes.length % 4) * 45,
-          y: 180 + (nodes.length % 5) * 45,
+          x: COL_X[kind] ?? 180,
+          y: defaultY + existingSameKind * 130,
         },
         data: {
           label: component.label,
@@ -704,7 +718,7 @@ function Workspace() {
       setSelectedNode(newNode);
       setSaved(false);
     },
-    [nodes.length, setNodes],
+    [nodes, setNodes],
   );
 
   const onDragStart = (
@@ -967,6 +981,21 @@ function Workspace() {
             </div>
 
             <div className="flex items-center gap-1.5">
+              <button
+                id="auto-layout-canvas-btn"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/70 px-2.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                title="Automatically organize nodes across tiered columns"
+                onClick={() => {
+                  setNodes((currentNodes) => layoutArchitectureGraph(currentNodes));
+                  setTimeout(() => {
+                    fitView({ padding: 0.2, duration: 400 });
+                  }, 50);
+                  setSaved(false);
+                }}
+              >
+                <Sparkles size={13} className="text-indigo-600" />
+                <span>Auto-Layout</span>
+              </button>
               <button
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
                 title="Toggle inspector"
