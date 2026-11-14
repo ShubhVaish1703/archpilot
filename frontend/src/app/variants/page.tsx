@@ -27,13 +27,8 @@ import {
   Coins,
   Shield,
   Activity,
-  Layers,
   ArrowRight,
   X,
-  ShieldAlert,
-  ShieldCheck,
-  TrendingUp,
-  AlertOctagon,
   Check,
   BookOpen,
   Cloud,
@@ -987,7 +982,7 @@ function VariantsComparisonWorkspace() {
     useState<Record<VariantId, VariantData>>(defaultVariants);
   const [originalAnalysis, setOriginalAnalysis] =
     useState<OriginalAnalysisData>(defaultOriginalAnalysis);
-  const [executiveSummary, setExecutiveSummary] = useState<string>(
+  const [, setExecutiveSummary] = useState<string>(
     "4 production architecture topologies generated and audited against system goals."
   );
   const [hasLiveBackendData, setHasLiveBackendData] = useState<boolean>(false);
@@ -1005,30 +1000,33 @@ function VariantsComparisonWorkspace() {
 
   // Read generated variants and original engine audit from sessionStorage
   useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem("archpilot_variants_data");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.variants && Array.isArray(parsed.variants)) {
-          const newMap: Record<VariantId, VariantData> = { ...defaultVariants };
-          parsed.variants.forEach((v: VariantData) => {
-            if (v.id) {
-              newMap[v.id] = v;
-            }
-          });
-          setVariantsMap(newMap);
-          setHasLiveBackendData(true);
+    const timer = setTimeout(() => {
+      try {
+        const stored = sessionStorage.getItem("archpilot_variants_data");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.variants && Array.isArray(parsed.variants)) {
+            const newMap: Record<VariantId, VariantData> = { ...defaultVariants };
+            parsed.variants.forEach((v: VariantData) => {
+              if (v.id) {
+                newMap[v.id] = v;
+              }
+            });
+            setVariantsMap(newMap);
+            setHasLiveBackendData(true);
+          }
+          if (parsed.originalAnalysis) {
+            setOriginalAnalysis(parsed.originalAnalysis);
+          }
+          if (parsed.executiveSummary) {
+            setExecutiveSummary(parsed.executiveSummary);
+          }
         }
-        if (parsed.originalAnalysis) {
-          setOriginalAnalysis(parsed.originalAnalysis);
-        }
-        if (parsed.executiveSummary) {
-          setExecutiveSummary(parsed.executiveSummary);
-        }
+      } catch (e) {
+        console.warn("Failed to load variants from sessionStorage", e);
       }
-    } catch (e) {
-      console.warn("Failed to load variants from sessionStorage", e);
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const currentVariant = variantsMap[selectedVariantId] || defaultVariants[selectedVariantId];

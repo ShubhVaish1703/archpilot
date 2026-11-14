@@ -13,6 +13,7 @@ const RULE_IMPACT_MAP = {
   SEC_CLIENT_DIRECT_DB: { security: 6.0, reliability: 1.5 },
   SEC_NO_AUTH: { security: 3.0 },
   SEC_DB_NO_FIREWALL: { security: 2.5 },
+  SEC_UNENCRYPTED_PATH: { security: 1.0 },
 
   // Reliability & Topology
   REL_CIRCULAR_DEPENDENCY: { reliability: 4.5 },
@@ -21,6 +22,7 @@ const RULE_IMPACT_MAP = {
   TOPO_DEAD_END_SERVER: { reliability: 2.0 },
   REL_QUEUE_NO_CONSUMER: { reliability: 2.0 },
   TOPO_DB_UNREACHABLE: { reliability: 2.0 },
+  REL_DB_NO_REPLICA: { reliability: 1.5 },
   TOPO_UNREACHABLE_FROM_ENTRY: { reliability: 1.5 },
   REL_CACHE_WITHOUT_DB: { reliability: 1.5 },
   REL_QUEUE_NO_PUBLISHER: { reliability: 1.0 },

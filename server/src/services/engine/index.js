@@ -72,8 +72,17 @@ export function analyzeArchitecture(
   trafficFilters = null,
   userIntent = null
 ) {
+  // Normalize incoming edges ensuring safe default for missing edge data and type
+  const normalizedEdges = (edges || []).map((edge) => ({
+    ...edge,
+    data: {
+      ...edge?.data,
+      type: edge?.data?.type || "sync",
+    },
+  }));
+
   // Phase 1: Build comprehensive graph profile in minimal passes
-  const profile = buildGraphProfile(nodes, edges);
+  const profile = buildGraphProfile(nodes, normalizedEdges);
 
   // Phase 2: Single-pass rule evaluation reading directly from profile facts
   const findings = runStructuralRules(profile);
@@ -92,9 +101,11 @@ export function analyzeArchitecture(
   return {
     timestamp: new Date().toISOString(),
     nodesCount: nodes.length,
-    edgesCount: edges.length,
+    edgesCount: normalizedEdges.length,
     userIntent: userIntent || null,
-    spofs: profile.criticalPathSPOFs,
+    spofs: profile.criticalPathSPOFs || [],
+    criticalPathSPOFs: profile.criticalPathSPOFs || [],
+    spofDetails: profile.spofs || [],
     cycles: profile.directedCycles,
     orphanNodes: profile.orphanNodes,
     unreachableNodes: profile.unreachableNodes,

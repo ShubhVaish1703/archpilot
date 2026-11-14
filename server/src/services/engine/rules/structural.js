@@ -46,7 +46,7 @@ export function runStructuralRules(profile) {
     });
   }
 
-  // 3. TOPO_NO_ENTRY_POINT: No Client or API Gateway
+  // 3. TOPO_NO_ENTRY_POINT: No Client, API Gateway, DNS, or CDN
   if (profile.noEntryPoint) {
     findings.push({
       ruleId: "TOPO_NO_ENTRY_POINT",
@@ -110,44 +110,60 @@ export function runStructuralRules(profile) {
     });
   }
 
-  // 8. SEC_NO_AUTH: Client directly connects to Server without Gateway
-  for (const edge of profile.directClientToServerEdges) {
+  // 8. SEC_NO_AUTH: Client directly connects or reaches Server without Gateway/Auth
+  for (const item of profile.unauthenticatedServerPaths || []) {
     findings.push({
       ruleId: "SEC_NO_AUTH",
       severity: "WARNING",
       title: "Missing API Gateway / Auth Boundary",
-      description: `Client "${labelOf(edge.source)}" connects directly to App Server "${labelOf(edge.target)}" without an API Gateway for centralized authentication, SSL termination, and rate limiting.`,
-      affectedNodes: [edge.source, edge.target],
-      remediation: "Insert an API Gateway between the client and application servers.",
+      description: `Client "${labelOf(item.clientId)}" can reach App Server "${labelOf(item.serverId)}" without passing through an API Gateway or Auth service for centralized authentication.`,
+      affectedNodes: [item.clientId, item.serverId],
+      remediation: "Insert an API Gateway or Auth component between clients and application servers to enforce authentication and rate limiting.",
     });
   }
 
-  // 9. SEC_DB_NO_FIREWALL: Database directly exposed to Edge / API
-  for (const edge of profile.dbExposedToEdgeEdges) {
-    if (kindOf(edge.source) === "client") continue; // already covered by SEC_CLIENT_DIRECT_DB
+  // 9. SEC_DB_NO_FIREWALL: Database directly exposed to client without firewall
+  for (const dbId of profile.dbsExposedWithoutFirewall || []) {
     findings.push({
       ruleId: "SEC_DB_NO_FIREWALL",
       severity: "WARNING",
-      title: "Database Exposed to Edge Layer",
-      description: `Database "${labelOf(edge.target)}" is directly queried by edge component "${labelOf(edge.source)}". Databases should reside in private subnets and be accessed only by backend application servers.`,
-      affectedNodes: [edge.source, edge.target],
-      remediation: "Place backend application servers between the edge layer and database.",
+      title: "Database Exposed Without Firewall",
+      description: `Database "${labelOf(dbId)}" can be reached from client traffic without traversing a firewall. Databases should reside in private subnets protected by firewalls.`,
+      affectedNodes: [dbId],
+      remediation: "Place a firewall component on the path between clients and the database to enforce traffic filtering.",
     });
   }
 
-  // 10. SPOF_CRITICAL_PATH: Articulation point on critical path
-  for (const spofId of profile.criticalPathSPOFs) {
+  // 10. SPOF_CRITICAL_PATH: Dominator SPOF with blast radius scaling
+  const totalNodes = profile.nodeMap?.size || 1;
+  const spofList = profile.spofs || (profile.criticalPathSPOFs || []).map((id) => ({
+    nodeId: id,
+    kind: kindOf(id),
+    dominates: [],
+    blastRadius: 1,
+  }));
+
+  for (const spof of spofList) {
+    const ratio = totalNodes > 0 ? spof.blastRadius / totalNodes : 0;
+    const severity = ratio >= 0.2 ? "CRITICAL" : "WARNING";
+
     findings.push({
       ruleId: "SPOF_CRITICAL_PATH",
-      severity: "CRITICAL",
+      severity,
       title: "Single Point of Failure (SPOF)",
-      description: `Component "${labelOf(spofId)}" (${kindOf(spofId)}) is a critical articulation point. Its outage completely severs client traffic from backend data persistence.`,
-      affectedNodes: [spofId],
+      description: `Component "${labelOf(spof.nodeId)}" (${kindOf(spof.nodeId)}) is a single point of failure dominating ${spof.blastRadius} downstream component(s)${
+        spof.dominates && spof.dominates.length > 0
+          ? ` [${spof.dominates.map(labelOf).join(", ")}]`
+          : ""
+      }. Its outage completely severs client traffic from downstream dependencies.`,
+      affectedNodes: [spof.nodeId],
+      dominates: spof.dominates || [],
+      blastRadius: spof.blastRadius || 0,
       remediation: "Provide redundant instances behind a load balancer or configure active-passive replication.",
     });
   }
 
-  // 11. REL_CIRCULAR_DEPENDENCY: Directed cycles between services
+  // 11. REL_CIRCULAR_DEPENDENCY: Directed cycles between services (sync edges only)
   for (const cycle of profile.directedCycles) {
     const readableNames = cycle.map(labelOf);
     findings.push({
@@ -160,7 +176,7 @@ export function runStructuralRules(profile) {
     });
   }
 
-  // 12. REL_QUEUE_NO_CONSUMER: Message Queue without consumer
+  // 12. REL_QUEUE_NO_CONSUMER: Message Queue without consumer on async edge
   for (const qId of profile.unconsumedQueues) {
     findings.push({
       ruleId: "REL_QUEUE_NO_CONSUMER",
@@ -172,7 +188,7 @@ export function runStructuralRules(profile) {
     });
   }
 
-  // 13. REL_QUEUE_NO_PUBLISHER: Message Queue without producer
+  // 13. REL_QUEUE_NO_PUBLISHER: Message Queue without producer on async edge
   for (const qId of profile.unproducedQueues) {
     findings.push({
       ruleId: "REL_QUEUE_NO_PUBLISHER",
@@ -241,6 +257,33 @@ export function runStructuralRules(profile) {
       description: `"${labelOf(bypass.source)}" connects to "${labelOf(bypass.target)}" both directly and indirectly through "${labelOf(bypass.via)}". This creates an unnecessary architectural bypass.`,
       affectedNodes: [bypass.source, bypass.via, bypass.target],
       remediation: "Remove the direct connection and route traffic through the intermediate proxy/gateway.",
+    });
+  }
+
+  // 19. SEC_UNENCRYPTED_PATH: Client-facing edge with http protocol or unencrypted
+  for (const edge of profile.unencryptedClientEdges || []) {
+    const protocol = edge.data?.protocol ? String(edge.data.protocol).trim().toLowerCase() : undefined;
+    findings.push({
+      ruleId: "SEC_UNENCRYPTED_PATH",
+      severity: "WARNING",
+      title: "Unencrypted Client Communication Path",
+      description: `Client-facing connection from "${labelOf(edge.source)}" to "${labelOf(edge.target)}" uses unencrypted communication${
+        protocol ? ` (${protocol.toUpperCase()})` : ""
+      }. Client traffic traversing public networks must use encrypted protocols (HTTPS/TLS).`,
+      affectedNodes: [edge.source, edge.target],
+      remediation: "Enable TLS encryption or switch protocol to HTTPS for all client-facing endpoints.",
+    });
+  }
+
+  // 20. REL_DB_NO_REPLICA: Database serving critical path without replication-connected replica
+  for (const dbId of profile.dbsWithoutReplica || []) {
+    findings.push({
+      ruleId: "REL_DB_NO_REPLICA",
+      severity: "WARNING",
+      title: "Database Lacks Replication Redundancy",
+      description: `Database "${labelOf(dbId)}" is serving a critical path but has no read replica connected via a replication edge. A primary database failure will cause total data unavailability.`,
+      affectedNodes: [dbId],
+      remediation: "Add a replica database component connected by a replication edge to provide read redundancy and failover.",
     });
   }
 
