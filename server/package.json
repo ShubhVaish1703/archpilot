@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "node --watch app.js",
-    "test": "node test/engine.test.js && node test/topology_rules.test.js && node test/comprehensive.test.js && node test/rag.test.js && node test/gatekeeper.test.js && node test/generator.test.js",
+    "test": "node test/engine.test.js && node test/topology_rules.test.js && node test/comprehensive.test.js && node test/rag.test.js && node test/gatekeeper.test.js && node test/generator.test.js && node test/dominators.test.js && node test/edge_types.test.js && node test/security_rules.test.js",
     "seed:embeddings": "node scripts/seedEmbeddings.js"
   },
   "dependencies": {

@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Environment Variables
+.env
+.env.local
+
+# Teamwork Agent Logs & Artifacts
+.agents/
+
+# OS metadata
+.DS_Store
