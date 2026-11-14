@@ -544,5 +544,6 @@ When presenting ArchPilot for academic evaluations or technical vivas, follow th
 ---
 
 ## 📄 License
-This project is developed as an **MCA Minor Project** for academic evaluation and distributed systems research.
-All rights reserved © 2026.
+
+Released under the [MIT License](./LICENSE).
+Developed as an **MCA Minor Project** for academic evaluation and distributed systems research. All rights reserved © 2026.
